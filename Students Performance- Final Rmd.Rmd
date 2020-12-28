@@ -1,0 +1,269 @@
+---
+title: \vspace{3in} "Student Performance - Executive Report"
+subtitle: "Tools for Decision Making- Project 02"
+author: "Babak Barghi, Cyra Stamm, Daniel Zöttl"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: yes
+---
+\newpage
+\tableofcontents
+\newpage
+---
+```{r setup, include=FALSE, message = FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The analysis is carried out in *R 4.0.2*[1] and packages below are used.
+
+```{r, message = FALSE, warning=FALSE}
+library("tidyverse")
+library("kableExtra")
+library("RColorBrewer")
+library("gridExtra")
+library("caret")
+library("rpart")
+library ("rpart.plot")
+library("caTools")
+```
+
+# Introduction
+
+The objective of this analysis is to predict the student academic results and to suggest a set of strategies, or actions for the schools.
+The data approach student achievement in secondary education of two schools. The data attributes include student grades, demographic, social and school related features. Two datasets are provided regarding the performance in two distinct subjects: Mathematics (mat) and Portuguese language (por).
+
+```{r}
+#importing the data sets
+mat <- read.csv("student-mat.csv", header=TRUE, sep=";", dec=".")
+por <- read.csv("student-por.csv", header=TRUE, sep=";", dec=".")
+```
+
+## Data Overview
+
+The datasets *por* and *mat* provide 649 and 395 observations respectively with 33 different variables.
+The variables are going to be into consideration for this analysis to understand the influence of these predictors on the final grades of the students.
+
+
+```{r}
+#Check the NAs
+sum(is.na(mat))
+sum(is.na(por))
+```
+As we see there is no missing values in any data sets, thus before starting with the analysis we would take a closer look at data frames using *str* function.
+
+
+```{r}
+#Close look
+str(mat)
+```
+# Methodology
+
+The data frames are already in a tidy format and does not require cleaning for the data analysis.
+
+To explore the data sets and get a first glance analysis, a boxplot would be illustrate the the scores of G1,G2 and G3 which represent the grade of each exam during the semester for students.
+
+```{r, fig1, fig.cap= "Frequency of Grades", fig.align="center", fig.pos="H",fig.width=8, fig.height=6, message = FALSE, warning=FALSE}
+#mat
+grades1 <- gather(mat,key = grade,value = score, G1,G2,G3)
+
+p1 <- ggplot(grades1, aes(x=grade, y=score, fill=grade)) +
+      geom_boxplot() +
+      coord_flip() +
+      stat_summary(fun = "mean", color="red", shape=15) +
+      geom_jitter(alpha=0.3, width = 0.2) + 
+ labs(x = "Cluster Groups of Mathematics") +
+  scale_fill_brewer(palette = "Dark2") +
+ geom_hline(yintercept=10, linetype="dashed", color = "blue") +
+  theme_bw()
+
+#por
+grades2 <- gather(por,key = grade,value = score, G1,G2,G3)
+
+p2 <- ggplot(grades2, aes(x=grade, y=score, fill=grade)) +
+      geom_boxplot() +
+      coord_flip() +
+      stat_summary(fun = "mean", color="red", shape=15) +
+      geom_jitter(alpha=0.3, width = 0.2) + 
+ labs(x = "Cluster Groups of Portuguese") +
+  scale_fill_brewer(palette = "Dark2") +
+ geom_hline(yintercept=10, linetype="dashed", color = "blue") +
+  theme_bw()
+
+
+grid.arrange(p1,p2)
+```
+
+From the figure above the distribution of grades can be seen. It is clear that many students has a score below 10 which means that they failed their exam. 
+
+## Introduce the Analysis
+
+The decision tree method is a powerful and popular predictive technique that is used for both *classification* and *regression*. There are many methodologies for constructing regression trees but in this report the classification and regression tree approach by *Rpart* and *caret* packages is used.
+
+
+# Results
+
+Decision tree analysis will be used to predict the students failure or pass based on certain important variables as chosen by the algorithm due to the correlation and collinearity exhibited by the variables. 
+
+
+## Modeling data sets
+
+Classification methodology was used for these particular data frames and the the response variable **grade** is modeled as a binary variable.
+
+```{r}
+# Math
+mat$final <- factor(ifelse(mat$G3 > 9, 1, 0), labels = c("Fail", "Pass"))
+mat$G3 <- NULL
+
+# Port
+por$final <- factor(ifelse(por$G3 > 9, 1, 0), labels = c("Fail", "Pass"))
+por$G3 <- NULL
+
+```
+
+After that we split the data sets as *train* and *test*. 
+
+```{r, eval=TRUE, echo=TRUE, message=FALSE}
+# Math - Training and test data
+set.seed(42)
+intrain = createDataPartition (y = mat [["final"]], p =0.75, list= FALSE )
+train_M <- mat [intrain,]
+test_M <- mat [-intrain,]
+# Port - Training and test data
+set.seed(42)
+intrain = createDataPartition (y = por [["final"]], p =0.75, list= FALSE )
+train_P <- por [intrain,]
+test_P <- por [-intrain,]
+``` 
+
+To split the dataset we use a split ratio equal to 0.75, as our datasets does not have so many observations and we need an appropriate number of rows in the test set to validate our modeling. 
+
+```{r}
+dim(train_M)
+dim(test_M)
+dim(train_P)
+dim(test_P)
+```
+
+The observations of each *train* and *test* datasets is obvious.  
+
+## Create the regression tree
+
+To obtain the most accurate result the best *cp* value is the one that minimize the prediction error RMSE (root mean squared error). For these models we consider the cp as 0.01.
+
+```{r}
+# Math tree
+tree_M <- rpart(final ~ .,
+              data = train_M,
+              method = "class", cp=0.01)
+
+imp_M <- varImp(tree_M)
+rownames(imp_M)[order(imp_M$Overall, decreasing=TRUE)]
+
+# Port tree
+tree_P <- rpart(final ~ .,
+              data = train_P,
+              method = "class", cp=0.01)
+
+imp_P <- varImp(tree_P)
+rownames(imp_P)[order(imp_P$Overall, decreasing=TRUE)]
+```
+
+We create the tree using all the variables and rank the variables in terms of importance to figure out the variables used by the decision tree algorithm to predict the final outcome of pass or fail.
+According to the results, Grades in 2nd and 1st exam are key predictors followed by past class failures, absences and time spending factors. It is also interesting to note that parents job and family relationships have a great influence on the grades.
+
+We use *printcp* function to understand the variables that actually were used in construction of tree.
+```{r}
+# Math cp
+printcp(tree_M)
+# Por cp
+printcp(tree_P)
+```
+
+
+By understanding the models we saw the number of calculated cp - Complexity parameter can be reduced to control the tree growth by methods such as *Pruning* to make the model more accurate. However due to the size of the data sets and reliable outcome, we accept the results.
+The tree logic is as below where only “Parent’s job and Grades in 2nd and 1st Exam” are used as variables by the tree based on correlation and collinearity between some of the other variables.
+
+```{r, fig2, fig.cap= "Decision Tree of Math", fig.align="center", fig.pos="H",fig.width=4, fig.height=3, message = FALSE, warning=FALSE}
+# Math tree
+prp(tree_M, extra=4,varlen = 4)
+```
+
+```{r, fig3, fig.cap= "Decision Tree of Port", fig.align="center", fig.pos="H", fig.width=4, fig.height=3, message = FALSE, warning=FALSE}
+# Port tree
+prp(tree_P, extra=4,varlen = 4)
+```
+
+It is much more clear with visualizing the trees that the classification rate at the node, expressed as the number of correct classifications and the number of observations in the node. 
+
+## Prediction
+
+In the following part we do prediction and assessing classification model performance using *confusionMatrix* by the test data sets.
+
+```{r}
+# Math
+confusionMatrix(predict(tree_M ,test_M, type = "class" ),test_M$final)
+
+# Port
+confusionMatrix(predict(tree_P ,test_P, type = "class" ),test_P$final)
+```
+
+By the output of the confusion matrix of both data sets we see great accuracy for the models. For the **Mathematics** 92 percent and for **Portuguese** 93 percent of accuracy is obtained. 
+
+
+# Conclusions
+
+Education is a key factor affecting long term economic progress. For maximizing the performance of students, the factors influencing the final grade should be identified and evaluated to control them.  As expected, the student evaluations have a high impact in the models.
+For instance, G2 and G1 are the most important features for passing or failing the final exam.
+Nevertheless, an analysis to knowledge provided by the best predictive models has shown that, in some cases,
+there are other relevant features, such as: school related
+(e.g. number of absences, reason to choose school, extra educational school support), demographic (e.g. student’s age, parent’s job and education) and social (e.g.
+going out with friends, alcohol consumption) variables.
+More research is also needed (e.g. sociological studies) in order to understand why and how some
+variables (e.g. reason to choose school, parent’s job or
+alcohol consumption) affect student performance.
+The models have described an obvious relationship between most recent test score, G2, but has also identified the father’s job, Fedu, as being a useful indicator which may not have been revealed in a human expert analysis.
+
+# References
+
+[1] R Core Team (2019). R: A language and environment for statistical
+computing. R Foundation for Statistical Computing, Vienna, Austria.
+URL https://www.R-project.org/.
+
+[2] Wickham et al., (2019). Welcome to the tidyverse. Journal of Open
+Source Software, 4(43), 1686, https://doi.org/10.21105/joss.01686 
+
+[3] Hao Zhu (2020). kableExtra: Construct Complex
+  Table with 'kable' and Pipe Syntax. R package
+  version 1.2.1.
+  https://CRAN.R-project.org/package=kableExtra
+  
+[4] Erich Neuwirth (2014). RColorBrewer: ColorBrewer
+  Palettes. R package version 1.1-2.
+  https://CRAN.R-project.org/package=RColorBrewer
+  
+  
+[5] Baptiste Auguie (2017). gridExtra: Miscellaneous
+  Functions for "Grid" Graphics. R package version
+  2.3. https://CRAN.R-project.org/package=gridExtra  
+  
+[6] Max Kuhn (2020). caret: Classification and
+  Regression Training. R package version 6.0-86.
+  https://CRAN.R-project.org/package=caret
+  
+[7] Terry Therneau and Beth Atkinson (2019).
+  rpart: Recursive Partitioning and Regression
+  Trees. R package version 4.1-15.
+  https://CRAN.R-project.org/package=rpart
+  
+  
+[8] Stephen Milborrow (2020). rpart.plot: Plot
+  'rpart' Models: An Enhanced Version of
+  'plot.rpart'. R package version 3.0.9.
+  https://CRAN.R-project.org/package=rpart.plot
+  
+[9] Jarek Tuszynski (2020). caTools: Tools: Moving
+  Window Statistics, GIF, Base64, ROC AUC, etc.
+  R package version 1.18.0.
+  https://CRAN.R-project.org/package=caTools  
